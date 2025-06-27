@@ -1,0 +1,165 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+
+}
+  header {
+    position: sticky;
+    top: 0;
+    background: #00573f;
+    color: white;
+    padding: 12px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    z-index: 100;
+    box-shadow: 0 2px 6px rgb(0 0 0 / 0.15);
+  }
+  .logo {
+  font-weight: bold;
+  margin-left: 10px;
+  color: rgb(255, 255, 255);
+  font-size: 3rem;
+  text-decoration: none;
+}
+
+body, html {
+  height: 100%;
+}
+
+.container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+}
+
+.form {
+  background: rgba(0, 0, 0, 0);
+  padding: 2rem;
+  border-radius: 10px;
+  box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+  width: 500px;
+}
+
+.form h2 {
+  text-align: center;
+  margin-bottom: 1.5rem;
+  color: #00573f;
+}
+
+.form label {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-weight: 600;
+  color: #7271718e;
+}
+
+.form input[type="email"],
+.form input[type="password"],
+.form input[type="text"] {
+  width: 100%;
+  padding: 0.5rem;
+  margin-bottom: 1rem;
+  border-radius: 5px;
+  border: 1px solid #ccc;
+  font-size: 1rem;
+  transition: border-color 0.3s ease;
+}
+
+.form input[type="email"]:focus,
+.form input[type="password"]:focus,
+.form input[type="text"]:focus {
+  border-color: #00573f;
+  outline: none;
+}
+
+.form button {
+  width: 100%;
+  padding: 0.7rem;
+  background-color: #00573f;
+  border: none;
+  border-radius: 5px;
+  color: white;
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+.form button:hover {
+  background-color: #00784a;
+}
+
+.links {
+  margin-top: 1rem;
+  text-align: center;
+}
+
+.links a {
+  color: #00573f;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.links a:hover {
+  text-decoration: underline;
+}
+
+.footer {
+  background-color: #00573f;
+  color: white;
+  padding: 40px 20px 10px;
+  font-family: Arial, sans-serif;
+}
+
+.footer-container {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 30px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.footer-logo {
+  font-weight: bold;
+  margin-left: 10px;
+  color: rgb(255, 255, 255);
+  font-size: 3rem;
+  text-decoration: none;
+}
+
+.footer-links ul {
+  list-style: none;
+  padding: 2;
+}
+
+.footer-links ul li {
+  margin-bottom: 8px;
+}
+
+.footer-links ul li a {
+  color: white;
+  text-decoration: none;
+}
+
+.footer-links ul li a:hover {
+  text-decoration: underline;
+}
+
+.footer-social .social-icons a {
+  color: white;
+  margin-right: 10px;
+  font-size: 20px;
+}
+
+.footer-bottom {
+  text-align: center;
+  padding: 15px 0 0;
+  font-size: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  margin-top: 30px;
+}

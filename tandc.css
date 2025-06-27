@@ -1,0 +1,84 @@
+/* General Reset */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background-color: #dad7cd;
+  color: #222;
+  line-height: 1.6;
+}
+
+/* Header */
+ header {
+    position: sticky;
+    top: 0;
+    background: #00573f;
+    color: white;
+    padding: 12px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    z-index: 100;
+    box-shadow: 0 2px 6px rgb(0 0 0 / 0.15);
+  }
+.logo {
+  font-size: 3rem;
+  font-weight: bold;
+  color:#ffffff;
+  text-decoration: none;
+}
+
+.navbar {
+  flex: 1;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.nav-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.nav-links a, .nav-links li a {
+  text-decoration: none;
+  color: #ffffff;
+  font-weight: 500;
+  transition: color 0.3s ease;
+}
+
+.nav-links a:hover {
+  color: #009c7e;
+}
+
+/* Main Section */
+.legal-section {
+  max-width: 900px;
+  margin: 50px auto;
+  padding: 0 20px;
+}
+
+.legal-section h2, .legal-section h3 {
+  color: #00573f;
+  margin-bottom: 20px;
+}
+
+.legal-section p, .legal-section ul {
+  margin-bottom: 16px;
+}
+
+/* Footer */
+footer {
+  text-align: center;
+  padding: 20px;
+  background-color: #00573f;
+  margin-top: 40px;
+  font-size: 14px;
+}
