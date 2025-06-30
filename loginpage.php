@@ -119,13 +119,48 @@ $stmt->bind_param("i", $userId);
 $stmt->execute();
 $user = $stmt->get_result()->fetch_assoc();
 $stmt->close();
-
-// Fetch orders
+// 1. Fetch orders for user
 $stmt = $conn->prepare("SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC");
 $stmt->bind_param("i", $userId);
 $stmt->execute();
 $orders = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmt->close();
+// Extract all order IDs
+$orderIds = array_column($orders, 'order_id');
+
+$orderItemsByOrderId = [];
+
+if (!empty($orderIds)) {
+    // Prepare placeholders for IN query (?, ?, ...)
+    $placeholders = implode(',', array_fill(0, count($orderIds), '?'));
+
+    // Define types for bind_param — all integers for order IDs
+    $types = str_repeat('i', count($orderIds));
+
+    // Fetch all order items for these orders including product_id
+    $sql = "SELECT order_id, product_id, product_name, quantity, price FROM order_items WHERE order_id IN ($placeholders)";
+    $stmt2 = $conn->prepare($sql);
+
+    if ($stmt2) {
+        // Bind params dynamically (PHP 5.6+)
+        $stmt2->bind_param($types, ...$orderIds);
+
+        $stmt2->execute();
+
+        $result = $stmt2->get_result();
+
+        while ($row = $result->fetch_assoc()) {
+            $orderItemsByOrderId[$row['order_id']][] = $row;
+        }
+
+        $stmt2->close();
+    } else {
+        // Handle prepare() failure
+        // For example:
+        error_log("Prepare failed: " . $conn->error);
+    }
+}
+
 
 // Fetch unread messages count (messages from admin to user)
 $stmt = $conn->prepare("SELECT COUNT(*) as unread_count FROM messagess WHERE receiver_id = ? AND sender_id = ? AND is_read = 0");
@@ -214,131 +249,205 @@ $conn->close();
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
   <style>
 
-    /* Base Styles */
-    body {
-      font-family: Arial, sans-serif;
-      background-color: #dad7cd;
-      color: #333;
-      margin: 0;
-      
-    }
+/* Global Styles */
+body {
+  font-family: Arial, sans-serif;
+  background-color: #dad7cd;
+  color: #333;
+  margin: 0;
+}
 
-    header {
-      width: 98.5%;
-      background: #00573f;
-      color: white;
-      padding: 1rem;
-      display: flex;
-      justify-content: space-between;
-      position: sticky;
-      top: 0;
-     
-    }
+/* Header */
+header {
+  width: 98.5%;
+  background: #00573f;
+  color: white;
+  padding: 1rem;
+  display: flex;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+}
 
-    header .logo a {
-      color: white;
-      font-weight: bold;
-      font-size: 3rem;
-      text-decoration: none;
-    }
+header .logo a {
+  color: white;
+  font-weight: bold;
+  font-size: 3rem;
+  text-decoration: none;
+}
 
-    header nav a {
-      color: white;
-      margin-left: 1rem;
-      font-size: 1.4rem;
-      text-decoration: none;
-    }
+header nav a {
+  color: white;
+  margin-left: 1rem;
+  font-size: 1.4rem;
+  text-decoration: none;
+}
 
-    main {
-      max-width: 900px;
-      margin: 2rem auto;
-    }
+/* Main Layout */
+main {
+  max-width: 100%;
+  margin: 2rem auto;
+}
 
-    /* Profile Section */
-    .profile-header {
-      background-color: #fff;
-      border-radius: 14px;
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-      border-bottom: 3px solid #ccc;
-      padding: 1rem;
-    }
+/* Profile Section */
+.profile-header {
+   max-width: 80%;
+   margin: 2rem auto;
+  background-color: #fff;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  border-bottom: 3px solid #ccc;
+  padding: 1rem;
+}
 
-    .avatar {
-      width: 90px;
-      height: 90px;
-      border-radius: 50%;
-      object-fit: cover;
-      border: 2px solid #00573f;
-    }
+.avatar {
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #00573f;
+}
 
-    .logout-container button {
-      display: inline-flex;     
-      background: #e63946;
-      border: none;
-      padding: 0.5rem 1rem;
-      color: white;
-      font-weight: bold;
-      cursor: pointer;
-      border-radius: 4px;
-    }
+.logout-container button {
+  display: inline-flex;
+  background: #e63946;
+  border: none;
+  padding: 0.5rem 1rem;
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+  border-radius: 4px;
+}
 
-    /* Dashboard Cards */
-    .dashboard-summary {
-      display: flex;
-      gap: 1rem;
-      margin-top: 2rem;
-      flex-wrap: wrap;
-    }
+/* Dashboard Cards */
+.dashboard-summary {
+   max-width: 80%;
+   margin: 2rem auto;
+  display: flex;
+  gap: 1rem;
+  margin-top: 2rem;
+  flex-wrap: wrap;
+}
 
-    .summary-card {
-      flex: 1 1 30%;
-      background: #f1f1f1;
-      padding: 1rem;
-      border-radius: 8px;
-      box-shadow: 0 0 6px rgba(0, 0, 0, 0.1);
-      min-width: 250px;
-      max-height: 350px;
-      overflow-y: auto;
-    }
+.summary-card {
+  flex: 1 1 30%;
+  background: #f1f1f1;
+  padding: 1rem;
+  border-radius: 8px;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.1);
+  min-width: 250px;
+  max-height: 350px;
+  overflow-y: auto;
+}
 
-    .summary-card h3 {
-      margin-top: 0;
-      color: #00573f;
-      text-align: center;
-    }
+.summary-card h3 {
+  margin-top: 0;
+  color: #00573f;
+  text-align: center;
+}
+
+.dashboard-summary .summary-card p {
+  font-size: 1.1rem;
+  color: #333;
+  margin-bottom: 0.5rem;
+}
+
+.dashboard-summary .summary-card small {
+  display: block;
+  font-size: 0.9rem;
+  color: #666;
+  text-align: center;
+}
+/* Orders Section */
+.ordersSection {
+  max-width: 95%;
+   margin: 2rem auto;
+  padding: 0 15px;
+}
+
+.order-list h3 {
+  text-align: center;
+  color: #00573f;
+  margin-bottom: 20px;
+  font-size: 2rem;
+}
+
 /* Orders Table */
 table.orders-table {
-  border-radius:8px;
-  background-color: #fff;
-  width: 100%; /* or set a max-width if you want */
+  width: 100%;
   border-collapse: collapse;
-  margin: 0 auto;  /* centers table horizontally */
+  border-radius: 8px;
+  background-color: #fff;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  margin: 0 auto;
 }
 
 table.orders-table th,
 table.orders-table td {
-  border: 1px solid #ccc;
-  padding: 8px 20px;
-  text-align: center;
+  border: 1px solid #ddd;
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
 }
 
 table.orders-table th {
-  background: #00573f;
+  background-color: #00573f;
   color: white;
+  font-weight: 600;
 }
 
+.order-main-row {
+  background-color: #f5f5f5;
+  font-weight: bold;
+}
 
-    /* Toggle Buttons */
-   #toggleMessageForm,
-   #toggleUpdateProfile {
-    display: none;
+table.orders-table tbody tr:hover {
+  background-color: #d0f0e3;
+}
+
+.order-item-row div {
+  margin-bottom: 6px;
+}
+
+.qty-col,
+.price-col {
+  text-align: right;
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .ordersSection {
+    padding: 0 10px;
   }
-  .toggle-view-btn,
-  label[for="toggleMessageForm"],
-  label[for="toggleUpdateProfile"],
-  .send-button {
+
+  table.orders-table th,
+  table.orders-table td {
+    padding: 8px 6px;
+    font-size: 0.85rem;
+  }
+
+  .order-list h3 {
+    font-size: 1.5rem;
+  }
+}.orders-table td.product-names {
+  min-width: 300px;       /* Increase width as needed */
+  white-space: nowrap;    /* Prevent text wrapping */
+  overflow-x: auto;       /* Add horizontal scroll if overflow */
+}
+
+/* Buttons */
+#toggleMessageForm,
+#toggleUpdateProfile {
+  display: none;
+}
+
+.toggle-view-btn,
+label[for="toggleMessageForm"],
+label[for="toggleUpdateProfile"],
+.send-button {
   cursor: pointer;
   background: white;
   color: #00573f;
@@ -347,7 +456,7 @@ table.orders-table th {
   border: 2px solid #00573f;
   border-radius: 8px;
   margin-top: 1rem;
-  display: inline-flex;     
+  display: inline-flex;
   transition: background 0.3s, color 0.3s;
   text-decoration: none;
 }
@@ -360,100 +469,101 @@ label[for="toggleUpdateProfile"]:hover,
   color: white;
 }
 
+/* Messages */
+.message-box {
+  border: 1px solid #ccc;
+  padding: 10px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  background: #f9f9f9;
+  transition: all 0.3s;
+}
 
-    /* Messages */
-    .message-box {
-      border: 1px solid #ccc;
-      padding: 10px;
-      border-radius: 8px;
-      margin-bottom: 10px;
-      background: #f9f9f9;
-      transition: all 0.3s;
-    }
+.mark-read-btn {
+  background: #00573f;
+  color: white;
+  border: none;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-left: 10px;
+  transition: background 0.3s;
+}
 
-    .mark-read-btn {
-      background: #00573f;
-      color: white;
-      border: none;
-      padding: 4px 8px;
-      border-radius: 4px;
-      cursor: pointer;
-      margin-left: 10px;
-      transition: background 0.3s;
-    }
+.mark-read-btn:hover {
+  background: #003f2b;
+}
 
-    .mark-read-btn:hover {
-      background: #003f2b;
-    }
+/* Success & Error Messages */
+.success-message,
+.error-message {
+  max-width: 50%;
+  margin: 2rem auto;
+  padding: 0.5rem;
+  border-radius: 4px;
+  
+}
 
-    /* Success & Error Messages */
-    .success-message,
-    .error-message {
-      padding: 0.5rem;
-      border-radius: 4px;
-      margin: 1rem 0;
-    }
+.success-message {
+  background: #d4edda;
+  border: 1px solid #c3e6cb;
+  color: #155724;
+}
 
-    .success-message {
-      background: #d4edda;
-      border: 1px solid #c3e6cb;
-      color: #155724;
-    }
+.error-message {
+  background: #f8d7da;
+  border: 1px solid #f5c6cb;
+  color: #721c24;
+}
 
-    .error-message {
-      background: #f8d7da;
-      border: 1px solid #f5c6cb;
-      color: #721c24;
-    }
+/* Update Profile Form */
+.update-profile-form {
+  background: #f9f9f9;
+  padding: 1.5rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  max-width: 500px;
+  margin: 1rem auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
 
-    /* Update Profile Form */
-    .update-profile-form {
-      background: #f9f9f9;
-      padding: 1.5rem;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      max-width: 500px;
-      margin: 1rem auto;
-      display: flex;
-      flex-direction: column;
-      gap: 0.8rem;
-    }
+.update-profile-form h3 {
+  margin-top: 0;
+  color: #00573f;
+  text-align: center;
+}
 
-    .update-profile-form h3 {
-      margin-top: 0;
-      color: #00573f;
-      text-align: center;
-    }
+.update-profile-form label {
+  font-weight: bold;
+}
 
-    .update-profile-form label {
-      font-weight: bold;
-    }
+.update-profile-form input[type="text"],
+.update-profile-form input[type="email"],
+.update-profile-form input[type="file"] {
+  padding: 0.6rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  width: 95%;
+}
 
-    .update-profile-form input[type="text"],
-    .update-profile-form input[type="email"],
-    .update-profile-form input[type="file"] {
-      padding: 0.6rem;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      width: 95%;
-    }
+.update-button {
+  background-color: #00573f;
+  color: white;
+  border: none;
+  padding: 0.8rem 1.5rem;
+  cursor: pointer;
+  border-radius: 4px;
+  font-weight: bold;
+  transition: background-color 0.3s ease;
+}
 
-    .update-button {
-      background-color: #00573f;
-      color: white;
-      border: none;
-      padding: 0.8rem 1.5rem;
-      cursor: pointer;
-      border-radius: 4px;
-      font-weight: bold;
-      transition: background-color 0.3s ease;
-    }
+.update-button:hover {
+  background-color: #004630;
+}
 
-    .update-button:hover {
-      background-color: #004630;
-    }
-
-    /* Send Message Form Styles */
+/* Send Message Form */
 #sendMessageForm {
   margin-top: 1.5rem;
   padding: 1.5rem;
@@ -486,27 +596,8 @@ label[for="toggleUpdateProfile"]:hover,
   display: block;
   margin: 0 auto;
 }
-/* Notifications Section Styles */
-.dashboard-summary .summary-card h3 {
-  margin-top: 0;
-  color: #00573f;
-  text-align: center;
-}
 
-.dashboard-summary .summary-card p {
-  font-size: 1.1rem;
-  color: #333;
-  margin-bottom: 0.5rem;
-}
-
-.dashboard-summary .summary-card small {
-  display: block;
-  font-size: 0.9rem;
-  color: #666;
-  text-align: center;
-}
-
-/* Notification Box Enhancement */
+/* Notifications */
 .notification-box {
   background-color: #f9f9f9;
   border: 1px solid #ddd;
@@ -525,15 +616,15 @@ label[for="toggleUpdateProfile"]:hover,
   color: #666;
   font-size: 0.9rem;
 }
-/* contact-message */
+
+/* Contact Messages */
 #userContactMessages {
   max-width: 700px;
   margin: 1.5rem auto;
   padding: 1rem 1.5rem;
   background: #f9f9f9;
   border-radius: 8px;
-  box-shadow: 0 0 10px rgb(0 0 0 / 0.05);
-  font-family: Arial, sans-serif;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.05);
   color: #003322;
 }
 
@@ -549,15 +640,6 @@ label[for="toggleUpdateProfile"]:hover,
   color: #777;
   text-align: center;
   margin: 2rem 0;
-}
-
-.message-box {
-  background: #ffffff;
-  border: 1px solid #c2d6d6;
-  border-radius: 6px;
-  padding: 1rem 1.2rem;
-  margin-bottom: 1.5rem;
-  box-shadow: 0 2px 4px rgb(0 0 0 / 0.05);
 }
 
 .message-header {
@@ -598,7 +680,7 @@ label[for="toggleUpdateProfile"]:hover,
   border-radius: 5px;
   padding: 0.6rem 1rem;
   margin-top: 0.6rem;
-  box-shadow: inset 0 0 5px rgb(0 87 63 / 0.1);
+  box-shadow: inset 0 0 5px rgba(0, 87, 63, 0.1);
 }
 
 .reply-date {
@@ -614,60 +696,61 @@ label[for="toggleUpdateProfile"]:hover,
   margin-top: 0.5rem;
 }
 
-    /* Footer */
-    .footer {
-      width: auto;
-      background-color: #00573f;
-      color: white;
-      padding: 40px 20px 10px;
-    }
+/* Footer */
+.footer {
+  width: auto;
+  background-color: #00573f;
+  color: white;
+  padding: 40px 20px 10px;
+}
 
-    .footer-container {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: space-between;
-      gap: 30px;
-      max-width: 1200px;
-      margin: 0 auto;
-    }
+.footer-container {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 30px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
 
-    .footer-logo {
-      font-weight: bold;
-      color: white;
-      font-size: 3rem;
-      text-decoration: none;
-    }
+.footer-logo {
+  font-weight: bold;
+  color: white;
+  font-size: 3rem;
+  text-decoration: none;
+}
 
-    .footer-links ul {
-      list-style: none;
-      padding: 0;
-    }
+.footer-links ul {
+  list-style: none;
+  padding: 0;
+}
 
-    .footer-links ul li {
-      margin-bottom: 8px;
-    }
+.footer-links ul li {
+  margin-bottom: 8px;
+}
 
-    .footer-links ul li a {
-      color: white;
-      text-decoration: none;
-    }
+.footer-links ul li a {
+  color: white;
+  text-decoration: none;
+}
 
-    .footer-links ul li a:hover {
-      text-decoration: underline;
-    }
+.footer-links ul li a:hover {
+  text-decoration: underline;
+}
 
-    .footer-social .social-icons a {
-      color: white;
-      margin-right: 10px;
-      font-size: 20px;
-    }
+.footer-social .social-icons a {
+  color: white;
+  margin-right: 10px;
+  font-size: 20px;
+}
 
-    .footer-bottom {
-      text-align: center;
-      padding: 15px 0 0;
-      font-size: 14px;
-      border-top: 1px solid rgba(255, 255, 255, 0.2);
-    }
+.footer-bottom {
+  text-align: center;
+  padding: 15px 0 0;
+  font-size: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+}
+
   </style>
 </head>
 
@@ -707,27 +790,35 @@ label[for="toggleUpdateProfile"]:hover,
         <?php elseif (isset($_GET['message']) && $_GET['message'] === 'sent'): ?>
             <div class="success-message">✅ Message sent successfully.</div>
         <?php endif; ?>
+<section id="updateProfileForm" style="display:none;">
+    <form method="POST" enctype="multipart/form-data" novalidate class="update-profile-form">
+        <h3>Update Profile Information</h3>
 
-        <section id="updateProfileForm" style="display:none;">
-            <form method="POST" enctype="multipart/form-data" novalidate class="update-profile-form">
-                <h3>Update Profile Information</h3>
-                <label>Name</label>
-                <input type="text" name="name" value="<?php echo htmlspecialchars($user['name']); ?>" required placeholder="Name" />
-                <label>Email</label>
-                <input type="email" name="email" value="<?php echo htmlspecialchars($user['email']); ?>" required placeholder="Email" />
-                <label>Avatar</label>
-                <input type="file" name="avatar" accept="image/*" />
-                <label>Address</label>
-                <input type="text" name="address" value="<?php echo htmlspecialchars($user['address'] ?? ''); ?>" placeholder="Address" />
-                <label>City</label>
-                <input type="text" name="city" value="<?php echo htmlspecialchars($user['city'] ?? ''); ?>" placeholder="City" />
-                <label>ZIP</label>
-                <input type="text" name="zip" value="<?php echo htmlspecialchars($user['zip'] ?? ''); ?>" placeholder="ZIP" />
-                <label>Phone</label>
-                <input type="text" name="phone" value="<?php echo htmlspecialchars($user['phone'] ?? ''); ?>" placeholder="Phone" />
-                <button type="submit" name="update_profile" class="update-button">Update Profile</button>
-            </form>
-        </section>
+        <label>Name</label>
+        <input type="text" name="name" value="<?php echo htmlspecialchars($user['name']); ?>" required placeholder="Name" readonly />
+
+        <label>Email</label>
+        <input type="email" name="email" value="<?php echo htmlspecialchars($user['email']); ?>" required placeholder="Email" readonly />
+
+        <label>Avatar</label>
+        <input type="file" name="avatar" accept="image/*" />
+
+        <label>Address</label>
+        <input type="text" name="address" value="<?php echo htmlspecialchars($user['address'] ?? ''); ?>" placeholder="Address" />
+
+        <label>City</label>
+        <input type="text" name="city" value="<?php echo htmlspecialchars($user['city'] ?? ''); ?>" placeholder="City" />
+
+        <label>ZIP</label>
+        <input type="text" name="zip" value="<?php echo htmlspecialchars($user['zip'] ?? ''); ?>" placeholder="ZIP" />
+
+        <label>Phone</label>
+        <input type="text" name="phone" value="<?php echo htmlspecialchars($user['phone'] ?? ''); ?>" placeholder="Phone" />
+
+        <button type="submit" name="update_profile" class="update-button">Update Profile</button>
+    </form>
+</section>
+
 
         <section class="dashboard-summary">
             <div class="summary-card">
@@ -830,50 +921,105 @@ label[for="toggleUpdateProfile"]:hover,
         </div>
 
         <section class="ordersSection">
-            <div class="order-list">
-                <h3>🛒 Orders</h3>
-                <?php if (count($orders) > 0): ?>
-                    <table class="orders-table">
-                        <thead>
-                            <tr>
-                                <th>Order ID</th>
-                                <th>User ID</th>
-                                <th>Name</th>
-                                <th>Email</th>
-                                <th>Address</th>
-                                <th>City</th>
-                                <th>ZIP</th>
-                                <th>Payment Method</th>
-                                <th>Total</th>
-                                <th>Status</th>
-                                <th>Date</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($orders as $order): ?>
-                                <tr>
-                                    <td><?php echo htmlspecialchars($order['order_id']); ?></td>
-                                    <td><?php echo htmlspecialchars($order['user_id']); ?></td>
-                                    <td><?php echo htmlspecialchars($order['full_name']); ?></td>
-                                    <td><?php echo htmlspecialchars($order['email']); ?></td>
-                                    <td><?php echo htmlspecialchars($order['address']); ?></td>
-                                    <td><?php echo htmlspecialchars($order['city']); ?></td>
-                                    <td><?php echo htmlspecialchars($order['zip']); ?></td>
-                                    <td><?php echo htmlspecialchars($order['payment_method']); ?></td>
-                                    <td>₹<?php echo number_format($order['order_total'], 2); ?></td>
-                                    <td><?php echo htmlspecialchars($order['status']); ?></td>
-                                    <td><?php echo date("M j, Y", strtotime($order['created_at'])); ?></td>
-                                </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                <?php else: ?>
-                    <p>You have no orders yet.</p>
-                <?php endif; ?>
-            </div>
-        </section>
-    </main>
+  <div class="order-list">
+    <h3>🛒 Orders</h3>
 
+    <?php if (count($orders) > 0): ?>
+      <table class="orders-table" border="1" cellpadding="6" cellspacing="0" style="margin: 0 auto; border-collapse: collapse;">
+        <thead>
+          <tr>
+            <th>Order ID</th>
+            <th>User ID</th>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Address</th>
+            <th>City</th>
+            <th>ZIP</th>
+            <th>Product IDs</th>
+            <th>Product Names</th>        
+            <th class="qty-col">Quantities</th>
+            <th class="price-col">Prices (₹)</th>
+            <th>Total (₹)</th>
+            <th>Payment Method</th>
+            <th>Status</th>
+            <th>Date</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php foreach ($orders as $order): ?>
+            <?php 
+              $items = $orderItemsByOrderId[$order['order_id']] ?? [];
+            ?>
+            <tr class="order-main-row">
+              <td><?= htmlspecialchars($order['order_id']) ?></td>
+              <td><?= htmlspecialchars($order['user_id']) ?></td>
+              <td><?= htmlspecialchars($order['full_name']) ?></td>
+              <td><?= htmlspecialchars($order['email']) ?></td>
+              <td><?= htmlspecialchars($order['address']) ?></td>
+              <td><?= htmlspecialchars($order['city']) ?></td>
+              <td><?= htmlspecialchars($order['zip']) ?></td>
+
+              <!-- Product IDs List -->
+              <td>
+                <?php if (count($items) > 0): ?>
+                  <?php foreach ($items as $item): ?>
+                    <div style="margin-bottom: 6px;"><?= htmlspecialchars($item['product_id']) ?></div>
+                  <?php endforeach; ?>
+                <?php else: ?>
+                  <em>No items</em>
+                <?php endif; ?>
+              </td>
+
+              <!-- Product Names List -->
+              <td class="product-names">
+  <?php if (count($items) > 0): ?>
+    <?php foreach ($items as $item): ?>
+      <div style="margin-bottom: 6px;"><?= htmlspecialchars($item['product_name']) ?></div>
+    <?php endforeach; ?>
+  <?php else: ?>
+    <em>No items</em>
+  <?php endif; ?>
+</td>
+
+
+              <!-- Quantities List -->
+              <td class="qty-col">
+                <?php if (count($items) > 0): ?>
+                  <?php foreach ($items as $item): ?>
+                    <div style="margin-bottom: 6px;"><?= (int)$item['quantity'] ?></div>
+                  <?php endforeach; ?>
+                <?php else: ?>
+                  <em>0</em>
+                <?php endif; ?>
+              </td>
+
+              <!-- Prices List -->
+              <td class="price-col">
+                <?php if (count($items) > 0): ?>
+                  <?php foreach ($items as $item): ?>
+                    <div style="margin-bottom: 6px;">₹<?= number_format($item['price'], 2) ?></div>
+                  <?php endforeach; ?>
+                <?php else: ?>
+                  <em>₹0.00</em>
+                <?php endif; ?>
+              </td>
+
+              <td>₹<?= number_format($order['order_total'], 2) ?></td>
+              <td><?= htmlspecialchars($order['payment_method']) ?></td>
+              <td><?= htmlspecialchars($order['status']) ?></td>
+              <td><?= date("M j, Y", strtotime($order['created_at'])) ?></td>
+            </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+    <?php else: ?>
+      <p style="text-align: center; font-style: italic;">You have no orders yet.</p>
+    <?php endif; ?>
+  </div>
+</section>
+
+
+</main>
 
 <script>
     // Toggle Update Profile form visibility
