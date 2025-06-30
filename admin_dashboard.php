@@ -162,6 +162,7 @@ if (isset($_GET['delete_product'])) {
 }
 
 // ===== ADD PRODUCT =====
+// ===== ADD PRODUCT =====
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_product'])) {
     if (!isset($_SESSION['product_token']) || $_SESSION['product_token'] !== $_POST['product_token']) {
         $_SESSION['product_token'] = $_POST['product_token'];
@@ -172,6 +173,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_product'])) {
         $slug = trim($_POST['slug']);
         $category = trim($_POST['category']);
         $newCategory = trim($_POST['new_category']);
+        $stockQuantity = isset($_POST['stock_quantity']) ? (int)$_POST['stock_quantity'] : 0;
 
         if ($newCategory !== '') {
             $category = $newCategory;
@@ -234,9 +236,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_product'])) {
                     if (move_uploaded_file($_FILES['image_file']['tmp_name'], $uploadPath)) {
                         $imageUrl = $uploadPath;
 
-                        $stmt = $conn->prepare("INSERT INTO products (product_id, product_name, price, description, image_url, category, slug) VALUES (?, ?, ?, ?, ?, ?, ?)");
+                        $stmt = $conn->prepare("INSERT INTO products (product_id, product_name, price, description, image_url, category, slug, stock_quantity) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
                         if ($stmt) {
-                            $stmt->bind_param("ssdssss", $productId, $productName, $price, $description, $imageUrl, $category, $slug);
+                            $stmt->bind_param("ssdssssi", $productId, $productName, $price, $description, $imageUrl, $category, $slug, $stockQuantity);
                             if ($stmt->execute()) {
                                 $productSuccess = "Product added successfully with ID: $productId";
                             } else {
@@ -254,7 +256,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_product'])) {
         }
     }
 }
-
 // ===== UPDATE PRODUCT =====
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_product'])) {
     $productId = trim($_POST['product_id']);
@@ -264,6 +265,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_product'])) {
     $slug = trim($_POST['slug']);
     $category = trim($_POST['category']);
     $newCategory = trim($_POST['new_category']);
+    $stockQuantity = isset($_POST['stock_quantity']) ? (int)$_POST['stock_quantity'] : 0;
 
     if ($newCategory !== '') {
         $category = $newCategory;
@@ -311,20 +313,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_product'])) {
                             }
                         }
 
-                        $stmt = $conn->prepare("UPDATE products SET product_name = ?, price = ?, description = ?, image_url = ?, category = ?, slug = ? WHERE product_id = ?");
-                        $stmt->bind_param("sdsssss", $productName, $price, $description, $uploadPath, $category, $slug, $productId);
+                        $stmt = $conn->prepare("UPDATE products SET product_name = ?, price = ?, description = ?, image_url = ?, category = ?, slug = ?, stock_quantity = ? WHERE product_id = ?");
+                        $stmt->bind_param("sdssssis", $productName, $price, $description, $uploadPath, $category, $slug, $stockQuantity, $productId);
                     } else {
                         $productError = "Failed to move uploaded image.";
                     }
                 }
             } else {
-                $stmt = $conn->prepare("UPDATE products SET product_name = ?, price = ?, description = ?, category = ?, slug = ? WHERE product_id = ?");
-                $stmt->bind_param("sdssss", $productName, $price, $description, $category, $slug, $productId);
+                $stmt = $conn->prepare("UPDATE products SET product_name = ?, price = ?, description = ?, category = ?, slug = ?, stock_quantity = ? WHERE product_id = ?");
+                $stmt->bind_param("sdsssis", $productName, $price, $description, $category, $slug, $stockQuantity, $productId);
             }
 
             if (empty($productError) && $stmt) {
                 if ($stmt->execute()) {
-                    $productSuccess = "Product updated successfully!";
+                    $productSuccess = "Product and stock updated successfully!";
                 } else {
                     $productError = "Error updating product: " . htmlspecialchars($stmt->error);
                 }
@@ -333,6 +335,96 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_product'])) {
         }
     }
 }
+
+//update stock 
+if (isset($_POST['update_stock']) && !empty($_POST['stock_quantity']) && is_array($_POST['stock_quantity'])) {
+    foreach ($_POST['stock_quantity'] as $productId => $qty) {
+        $productId = trim($productId);
+        $qty = (int)$qty;
+        if ($qty < 0) $qty = 0;
+
+        $stmt = $conn->prepare("UPDATE products SET stock_quantity = ? WHERE product_id = ?");
+        if ($stmt) {
+            $stmt->bind_param("is", $qty, $productId);
+            $stmt->execute();
+            $stmt->close();
+        }
+    }
+    $inventorySuccess = "Stock quantities updated successfully.";
+    header("Location: admin_dashboard.php");
+    exit();
+}
+/* dashboard cards */
+// ======================= total products in inverotry =======================
+$query = "SELECT SUM(stock_quantity) as totalInventory FROM products";
+$result = $conn->query($query);
+$totalProductsInInventory = 0;
+
+if ($result) {
+    $row = $result->fetch_assoc();
+    $totalProductsInInventory = $row['totalInventory'] ?? 0;
+    $result->free();
+}
+// =======================  Packed Orders =======================
+$packedOrders = 0;
+$res = $conn->query("SELECT COUNT(*) AS cnt FROM orders WHERE status = 'Packed'");
+if ($res) {
+    $row = $res->fetch_assoc();
+    $packedOrders = (int)$row['cnt'];
+    $res->free();
+}
+// ======================= Shipped Orders =======================
+$shippedOrders = 0;
+$res = $conn->query("SELECT COUNT(*) AS cnt FROM orders WHERE status = 'Shipped'");
+if ($res) {
+    $row = $res->fetch_assoc();
+    $shippedOrders = (int)$row['cnt'];
+    $res->free();
+}
+
+// ======================= Delivered Orders =======================
+$deliveredOrders = 0;
+$res = $conn->query("SELECT COUNT(*) AS cnt FROM orders WHERE status = 'Delivered'");
+if ($res) {
+    $row = $res->fetch_assoc();
+    $deliveredOrders = (int)$row['cnt'];
+    $res->free();
+}
+// ======================= Cancelled Orders =======================
+$cancelledOrders = 0;
+$res = $conn->query("SELECT COUNT(*) AS cnt FROM orders WHERE status = 'Cancelled'");
+if ($res) {
+    $row = $res->fetch_assoc();
+    $cancelledOrders = (int)$row['cnt'];
+    $res->free();
+}
+// ======================= total Products Sold =======================
+$totalProductsSold = 0;
+$res = $conn->query("SELECT IFNULL(SUM(quantity), 0) AS total_sold FROM order_items");
+if ($res) {
+    $row = $res->fetch_assoc();
+    $totalProductsSold = (int)$row['total_sold'];
+    $res->free();
+}
+// =======================Total Contact Messages=======================
+
+$totalContactMessages = 0;
+$res = $conn->query("SELECT COUNT(*) AS cnt FROM contact_messages");
+if ($res) {
+    $row = $res->fetch_assoc();
+    $totalContactMessages = (int)$row['cnt'];
+    $res->free();
+}
+// ======================= Total Admin Notifications (Ads) =======================
+
+$totalAdminNotifications = 0;
+$res = $conn->query("SELECT COUNT(*) AS cnt FROM notifications");
+if ($res) {
+    $row = $res->fetch_assoc();
+    $totalAdminNotifications = (int)$row['cnt'];
+    $res->free();
+}
+
 
 // ===== FETCH ALL PRODUCTS =====
 $products = [];
@@ -560,7 +652,7 @@ $conn->close();
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {font-family: Arial, sans-serif; margin: 0; padding: 0; background: #dad7cd;}
-        .main {margin-left: 220px; padding: 2rem;}
+        .mmain {margin-left: 220px; margin-top: 80px; padding: 2rem;}
         .section {display: none;}
         table {width: 100%; border-collapse: collapse; margin-top: 1rem; background: #ffffff;}
         th, td {border: 1px solid #ccc; padding: 8px;}
@@ -642,6 +734,138 @@ $conn->close();
         .badge-shipped { background-color: #ffc107; color: #212529; }
         .badge-delivered { background-color: #28a745; }
         .badge-cancelled { background-color: #dc3545; }
+
+        #inventorySection {
+  max-width: 95%;
+  margin: 20px auto;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  color: #2C3930;
+  background: #f9f9f9;
+  padding: 20px;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.1);
+}
+
+#inventorySection h2 {
+  text-align: center;
+  margin-bottom: 20px;
+  color: #00573f;
+  font-weight: 700;
+}
+
+.success-message, .error-message {
+  margin-bottom: 15px;
+  padding: 10px 15px;
+  border-radius: 5px;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.success-message {
+  background-color: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+}
+
+.error-message {
+  background-color: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+}
+
+#inventoryForm {
+  overflow-x: auto;
+}
+
+#inventoryForm button[type="submit"] {
+  background-color: #00573f;
+  color: white;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 1rem;
+  margin-bottom: 10px;
+  transition: background-color 0.3s ease;
+}
+
+#inventoryForm button[type="submit"]:hover {
+  background-color: #004d33;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+  text-align: left;
+  min-width: 700px;
+}
+
+thead th {
+  background-color: #00573f;
+  color: #ffffff;
+  padding: 10px 12px;
+  font-weight: 700;
+  border: 1px solid #ddd;
+}
+
+tbody tr {
+  border-bottom: 1px solid #ddd;
+  background-color: #fff;
+}
+
+tbody tr:nth-child(even) {
+  background-color: #f3f6f4;
+}
+
+tbody tr:hover {
+  background-color: #dff0d8;
+}
+
+tbody td {
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  vertical-align: middle;
+}
+
+input[type=number] {
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 0.95rem;
+  text-align: center;
+  width: 80px;
+  transition: border-color 0.3s ease;
+}
+
+input[type=number]:focus {
+  border-color: #00573f;
+  outline: none;
+}
+
+/* Low stock highlight - keeps your red background */
+tbody tr[style*="background-color: #ffe6e6"] {
+  background-color: #ffe6e6 !important;
+}
+
+@media (max-width: 750px) {
+  #inventorySection {
+    padding: 10px;
+  }
+  table {
+    min-width: 100%;
+    font-size: 0.9rem;
+  }
+  thead th, tbody td {
+    padding: 8px 6px;
+  }
+  #inventoryForm button[type="submit"] {
+    width: 100%;
+    padding: 12px 0;
+  }
+}
+
 
     /* Send Message Form Styling */
     .send-message-form {
@@ -907,6 +1131,13 @@ $conn->close();
     border-collapse: collapse;
     margin-top: 30px;
   }
+
+.product-name-cell div {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px; /* adjust width as needed */
+}
 
   th, td {
     border: 1px solid #aaa;
@@ -1229,6 +1460,7 @@ h2, h3 {
 <div class="sidebar">
     <!-- Existing menu items -->
     <button onclick="showSection('dashboard')">Dashboard</button>
+    <button onclick="showSection('inventorySection')">inventorySection</button>
     <button onclick="showSection('addProductSection')">Add Product</button>
     <button onclick="showSection('productListSection')">Product List</button>
     <button onclick="showSection('usersSection')">User Table</button>
@@ -1239,8 +1471,8 @@ h2, h3 {
     <button onclick="showSection('adminNotifications')">Notifications (Ads)</button>
 </div>
 
-<div class="main">
-    <div class="main">
+<div class="mmain">
+      <!-- =======================  dashboard SECTION ======================= -->
 <div id="dashboard" class="content section">
 
     <h2>Dashboard Summary</h2>
@@ -1250,38 +1482,141 @@ h2, h3 {
         <h3>Total Users</h3>
         <p><?= htmlspecialchars($totalUsers) ?></p>
       </div>
+
       <div class="stat-card">
         <h3>Total Orders</h3>
         <p><?= htmlspecialchars($totalOrders) ?></p>
       </div>
-      <div class="stat-card">
-        <h3>Total Revenue</h3>
-        <p>₹ <?= number_format($totalRevenue, 2) ?></p>
-      </div>
+      
       <div class="stat-card">
         <h3>New Orders Today</h3>
         <p><?= htmlspecialchars($newOrdersToday) ?></p>
       </div>
+
       <div class="stat-card">
-        <h3>Pending Orders</h3>
-        <p><?= htmlspecialchars($pendingOrders) ?></p>
+        <h3>New Inbox</h3>
+        <p><?= htmlspecialchars($messagesCount) ?></p>
       </div>
+      
+      <div class="stat-card">
+        <h3>Contact Messages</h3>
+        <p><?= htmlspecialchars($totalContactMessages) ?></p>
+    </div>
+
+      <div class="stat-card">
+        <h3>Total Revenue</h3>
+        <p>₹ <?= number_format($totalRevenue, 2) ?></p>
+      </div>
+
       <div class="stat-card">
         <h3>Total Products</h3>
         <p><?= htmlspecialchars($totalProducts) ?></p>
       </div>
+
       <div class="stat-card">
-        <h3>Unread Messages</h3>
-        <p><?= htmlspecialchars($messagesCount) ?></p>
+        <h3>Total Products in Inventory</h3>
+        <p><?= number_format((int)$totalProductsInInventory) ?></p>
       </div>
+      <div class="stat-card">
+        <h3>Total Products Sold</h3>
+        <p><?= htmlspecialchars($totalProductsSold) ?></p>
+    </div>
+    
+    <div class="stat-card">
+        <h3>Admin Notifications (Ads)</h3>
+        <p><?= htmlspecialchars($totalAdminNotifications) ?></p>
     </div>
 
-<div id="chartContainer">
-  <h3>Sales Chart (Last 7 Days)</h3>
-  <canvas id="salesChart" width="800" height="300"></canvas>
+      <div class="stat-card">
+        <h3>Pending Orders</h3>
+        <p><?= htmlspecialchars($pendingOrders) ?></p>
+      </div>
+
+      <div class="stat-card">
+        <h3>Packed Orders</h3>
+        <p><?= htmlspecialchars($packedOrders) ?></p>
+      </div>
+
+      <div class="stat-card">
+        <h3>Shipped Orders</h3>
+        <p><?= htmlspecialchars($shippedOrders) ?></p>
+      </div>
+
+      <div class="stat-card">
+        <h3>Delivered Orders</h3>
+        <p><?= htmlspecialchars($deliveredOrders) ?></p>
+      </div>
+
+      <div class="stat-card">
+        <h3>Cancelled Orders</h3>
+        <p><?= htmlspecialchars($cancelledOrders) ?></p>
+      </div>
+    
+    </div>
+
+    <div id="chartContainer">
+      <h3>Sales Chart (Last 7 Days)</h3>
+      <canvas id="salesChart" width="800" height="300"></canvas>
+    </div>
+
 </div>
 
-  </div>
+
+<!-- =======================  PRODUCT inventory SECTION ======================= -->
+<div id="inventorySection" class="content section">
+    <h2>Inventory Management</h2>
+    
+    <?php if (!empty($inventorySuccess)): ?>
+        <div class="success-message"><?= htmlspecialchars($inventorySuccess) ?></div>
+    <?php elseif (!empty($inventoryError)): ?>
+        <div class="error-message"><?= htmlspecialchars($inventoryError) ?></div>
+    <?php endif; ?>
+
+    <?php if (empty($products)): ?>
+        <p>No products available.</p>
+    <?php else: ?>
+        <form method="POST" action="" id="inventoryForm">
+         <table border="1" cellpadding="8" cellspacing="0" style="width: 100%; border-collapse: collapse;">
+    <br>
+    <button type="submit" name="update_stock">Update Stock</button>
+    <thead>
+        <tr>
+            <th>ID</th> <!-- This will be your serial number -->
+            <th>Product ID</th>
+            <th>Name</th>
+            <th>Category</th>
+            <th>Price (₹)</th>
+            <th>Stock Quantity</th>
+            <th>Low Stock Alert</th>
+        </tr>
+    </thead>
+    <tbody>
+        <?php 
+        $count = 1; // Initialize serial number
+        foreach ($products as $product): 
+            $lowStockThreshold = 1; // Customize threshold here
+            $isLowStock = ($product['stock_quantity'] ?? 0) <= $lowStockThreshold;
+        ?>
+            <tr style="<?= $isLowStock ? 'background-color: #ffe6e6;' : '' ?>">
+                <td><?= $count++ ?></td> <!-- Serial number here -->
+                <td><?= htmlspecialchars($product['product_id']) ?></td>
+                <td><?= htmlspecialchars($product['product_name']) ?></td>
+                <td><?= htmlspecialchars($product['category']) ?></td>
+                <td><?= number_format($product['price'], 2) ?></td>
+                <td>
+                    <input type="number" name="stock_quantity[<?= htmlspecialchars($product['product_id']) ?>]" 
+                           value="<?= (int)($product['stock_quantity'] ?? 0) ?>" min="0" style="width: 80px;">
+                </td>
+                <td>
+                    <?= $isLowStock ? '<span style="color: red; font-weight: bold;">Low Stock!</span>' : '—' ?>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+    </tbody>
+</table>
+
+        </form>
+    <?php endif; ?>
 </div>
 
 <!-- ======================= ADD PRODUCT SECTION ======================= -->
@@ -1307,6 +1642,9 @@ h2, h3 {
         <label for="price">Price (₹) *</label>
         <input type="number" id="price" name="price" required min="0" step="1">
 
+        <label for="stock_quantity">Stock Quantity *</label>
+        <input type="number" id="stock_quantity" name="stock_quantity" required min="0" step="1">
+
         <label for="description">Description</label>
         <textarea id="description" name="description" rows="3"></textarea>
 
@@ -1331,7 +1669,6 @@ h2, h3 {
 
     <?php if ($productSuccess): ?>
         <script>
-            // Auto-hide the success message and refresh page after 2 seconds
             setTimeout(function() {
                 window.location.reload();
             }, 2000);
@@ -1342,98 +1679,106 @@ h2, h3 {
 <!-- ======================= PRODUCT LISTING ======================= -->
 <div id="productListSection" class="section product-list-section">
     <section class="search-section">
-  <input type="text" id="searchInput" placeholder="Search products...">
-<p id="searchHint">Start typing to search for products...</p>
-</section>
+        <input type="text" id="searchInput" placeholder="Search products...">
+        <p id="searchHint">Start typing to search for products...</p>
+    </section>
+
     <h2 class="product-list-title">Products Listing</h2>
 
     <?php if (empty($products)) : ?>
         <p class="no-products">No products found.</p>
     <?php else: ?>
-        <div class="product-table-wrapper">
-            <table class="product-table">
-                <thead>
-                    <tr>
-                        <th>Image</th>
-                        <th>Product ID</th>
-                        <th>Name</th>
-                        <th>Slug</th>
-                        <th>Price (₹)</th>
-                        <th>Description</th>
-                        <th>Category</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($products as $product): ?>
+        <form method="POST" action="admin_dashboard.php">
+            <div class="product-table-wrapper">
+                <table class="product-table">
+                    <thead>
                         <tr>
-                            <td>
-                                <img src="<?= htmlspecialchars($product['image_url']) ?>" alt="Image" class="product-image">
-                            </td>
-                            <td><?= htmlspecialchars($product['product_id']) ?></td>
-                            <td><?= htmlspecialchars($product['product_name']) ?></td>
-                            <td><?= htmlspecialchars($product['slug']) ?></td>
-                            <td><?= number_format($product['price'], 2) ?></td>
-                            <td><?= nl2br(htmlspecialchars($product['description'])) ?></td>
-                            <td><?= htmlspecialchars($product['category']) ?></td>
-                            <td id="action-buttons">
-                                <button type="button" class="edit-btn" onclick="showEditForm('<?= addslashes($product['product_id']) ?>')">Edit</button>
-                                <a href="?delete_product=<?= urlencode($product['product_id']) ?>" onclick="return confirm('Are you sure you want to delete this product?');" class="delete-btn">Delete</a>
-                            </td>
+                            <th>Image</th>
+                            <th>Product ID</th>
+                            <th>Name</th>
+                            <th>Slug</th>
+                            <th>Price (₹)</th>
+                            <th>Stock</th>
+                            <th>Description</th>
+                            <th>Category</th>
+                            <th>Actions</th>
                         </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($products as $product): ?>
+                            <tr>
+                                <td>
+                                    <img src="<?= htmlspecialchars($product['image_url']) ?>" alt="Image" class="product-image">
+                                </td>
+                                <td><?= htmlspecialchars($product['product_id']) ?></td>
+                                <td><?= htmlspecialchars($product['product_name']) ?></td>
+                                <td><?= htmlspecialchars($product['slug']) ?></td>
+                                <td><?= number_format($product['price'], 2) ?></td>
+                                <td>
+                                    <input type="number" name="stock_quantity[<?= $product['product_id'] ?>]" value="<?= htmlspecialchars($product['stock_quantity']) ?>" min="0" step="1" class="stock-input">
+                                </td>
+                                <td><?= nl2br(htmlspecialchars($product['description'])) ?></td>
+                                <td><?= htmlspecialchars($product['category']) ?></td>
+                                <td id="action-buttons">
+                                    <button type="button" class="edit-btn" onclick="showEditForm('<?= addslashes($product['product_id']) ?>')">Edit</button>
+                                    <a href="?delete_product=<?= urlencode($product['product_id']) ?>" onclick="return confirm('Are you sure you want to delete this product?');" class="delete-btn">Delete</a>
+                                </td>
+                            </tr>
 
-                        <!-- ================= EDIT PRODUCT FORM (INLINE) ================= -->
-                        <tr id="edit-<?= htmlspecialchars($product['product_id']) ?>" class="edit-section" style="display:none;">
-                            <td colspan="8">
-                                <form method="post" enctype="multipart/form-data" autocomplete="off" class="edit-product-form">
+                            <!-- ================= EDIT PRODUCT FORM (INLINE) ================= -->
+                            <tr id="edit-<?= htmlspecialchars($product['product_id']) ?>" class="edit-section" style="display:none;">
+                                <td colspan="9">
+                                    <form method="post" enctype="multipart/form-data" autocomplete="off" class="edit-product-form">
 
-                                    <input type="hidden" name="product_id" value="<?= htmlspecialchars($product['product_id']) ?>">
+                                        <input type="hidden" name="product_id" value="<?= htmlspecialchars($product['product_id']) ?>">
 
-                                    <label>Product Name *</label>
-                                    <input type="text" name="product_name" required maxlength="255" value="<?= htmlspecialchars($product['product_name']) ?>">
+                                        <label>Product Name *</label>
+                                        <input type="text" name="product_name" required maxlength="255" value="<?= htmlspecialchars($product['product_name']) ?>">
 
-                                    <label>Slug *</label>
-                                    <input type="text" name="slug" required maxlength="255" value="<?= htmlspecialchars($product['slug']) ?>">
+                                        <label>Slug *</label>
+                                        <input type="text" name="slug" required maxlength="255" value="<?= htmlspecialchars($product['slug']) ?>">
 
-                                    <label>Price (₹) *</label>
-                                    <input type="number" name="price" required min="0" step="0.01" value="<?= htmlspecialchars($product['price']) ?>">
+                                        <label>Price (₹) *</label>
+                                        <input type="number" name="price" required min="0" step="0.01" value="<?= htmlspecialchars($product['price']) ?>">
 
-                                    <label>Description</label>
-                                    <textarea name="description" rows="3"><?= htmlspecialchars($product['description']) ?></textarea>
+                                        <label>Stock Quantity *</label>
+                                        <input type="number" name="stock_quantity[<?= $product['product_id'] ?>]" required min="0" step="1" value="<?= htmlspecialchars($product['stock_quantity']) ?>">
 
-                                    <label>Select Category *</label>
-                                    <select name="category" required onchange="toggleNewCategoryEdit(this.value, '<?= htmlspecialchars($product['product_id']) ?>')">
-                                        <option value="" disabled>-- Choose Category --</option>
-                                        <?php foreach ($categories as $cat): ?>
-                                            <option value="<?= htmlspecialchars($cat) ?>" <?= $product['category'] === $cat ? 'selected' : '' ?>><?= htmlspecialchars($cat) ?></option>
-                                        <?php endforeach; ?>
-                                        <option value="__new">-- Add New Category --</option>
-                                    </select>
+                                        <label>Description</label>
+                                        <textarea name="description" rows="3"><?= htmlspecialchars($product['description']) ?></textarea>
 
-                                    <div id="edit_new_category_<?= htmlspecialchars($product['product_id']) ?>" class="new-category-input" style="display:none;">
-                                        <input type="text" name="new_category" placeholder="Enter new category">
-                                    </div>
+                                        <label>Select Category *</label>
+                                        <select name="category" required onchange="toggleNewCategoryEdit(this.value, '<?= htmlspecialchars($product['product_id']) ?>')">
+                                            <option value="" disabled>-- Choose Category --</option>
+                                            <?php foreach ($categories as $cat): ?>
+                                                <option value="<?= htmlspecialchars($cat) ?>" <?= $product['category'] === $cat ? 'selected' : '' ?>><?= htmlspecialchars($cat) ?></option>
+                                            <?php endforeach; ?>
+                                            <option value="__new">-- Add New Category --</option>
+                                        </select>
 
-                                    <label>Change Image (leave empty to keep current)</label>
-                                    <input type="file" name="image_file" accept="image/*">
+                                        <div id="edit_new_category_<?= htmlspecialchars($product['product_id']) ?>" class="new-category-input" style="display:none;">
+                                            <input type="text" name="new_category" placeholder="Enter new category">
+                                        </div>
 
-                                    <div class="form-buttons">
-                                        <button type="submit" name="update_product" class="update-btn">Update Product</button>
-                                        <button type="button" onclick="hideEditForm('<?= addslashes($product['product_id']) ?>')" class="cancel-btn">Cancel</button>
-                                    </div>
-                                </form>
-                            </td>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
+                                        <label>Change Image (leave empty to keep current)</label>
+                                        <input type="file" name="image_file" accept="image/*">
+
+                                        <div class="form-buttons">
+                                            <button type="submit" name="update_product" class="update-btn">Update Product</button>
+                                            <button type="button" onclick="hideEditForm('<?= addslashes($product['product_id']) ?>')" class="cancel-btn">Cancel</button>
+                                        </div>
+                                    </form>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <button type="submit" name="update_stock" class="update-stock-btn">Update Stock Quantities</button>
+        </form>
     <?php endif; ?>
 </div>
-
-
-
-
+<!-- ======================= users Section ======================= -->
 <div id="usersSection" class="section" style="display:none;">
     <h2>All Users</h2>
     <table border="1" cellpadding="8" cellspacing="0" style="width:100%; border-collapse: collapse;">
@@ -1479,7 +1824,7 @@ h2, h3 {
         </tbody>
     </table>
 </div>
-
+<!-- ======================= orders Section ======================= -->
 <div id="ordersSection" class="section">
     <h2>All Orders</h2>
 
@@ -1499,7 +1844,11 @@ h2, h3 {
                     <th>Phone</th>
                     <th>Payment Method</th>
                     <th>Order Total (₹)</th>
-                    <th>Items</th>
+                    <!-- New item detail columns -->
+                    <th>Product Name(s)</th>
+                    <th>Product ID(s)</th>
+                    <th>Quantity</th>
+                    <th>Category</th>
                     <th>Status</th>
                     <th>Date</th>
                 </tr>
@@ -1518,18 +1867,48 @@ h2, h3 {
                         <td><?= htmlspecialchars($order['payment_method']) ?></td>
                         <td><strong>₹<?= htmlspecialchars($order['order_total']) ?></strong></td>
 
+                        <!-- Product Names -->
+                     <td>
+                        <?php if (!empty($order['items'])): ?>
+                            <?php foreach ($order['items'] as $item): ?>
+                                <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px;">
+                                    <?= htmlspecialchars($item['product_name']) ?>
+                                </div>
+                                <?php endforeach; ?>
+                                <?php else: ?>No items
+                                    <?php endif; ?>
+                                </td>
+
+                        <!-- Product IDs -->
                         <td>
                             <?php if (!empty($order['items'])): ?>
                                 <?php foreach ($order['items'] as $item): ?>
-                                    <div style="margin-bottom: 6px;">
-                                        <strong><?= htmlspecialchars($item['product_name']) ?></strong> <br>
-                                        Product ID: <?= htmlspecialchars($item['product_id']) ?> <br>
-                                        Quantity: <?= (int)$item['quantity'] ?> <br>
-                                        Category: <em><?= htmlspecialchars($item['category']) ?></em>
-                                    </div>
+                                    <div><?= htmlspecialchars($item['product_id']) ?></div>
                                 <?php endforeach; ?>
                             <?php else: ?>
-                                No items found
+                                -
+                            <?php endif; ?>
+                        </td>
+
+                        <!-- Quantity -->
+                        <td>
+                            <?php if (!empty($order['items'])): ?>
+                                <?php foreach ($order['items'] as $item): ?>
+                                    <div><?= (int)$item['quantity'] ?></div>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                -
+                            <?php endif; ?>
+                        </td>
+
+                        <!-- Category -->
+                        <td>
+                            <?php if (!empty($order['items'])): ?>
+                                <?php foreach ($order['items'] as $item): ?>
+                                    <div><?= htmlspecialchars($item['category']) ?></div>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                -
                             <?php endif; ?>
                         </td>
 
@@ -1555,7 +1934,7 @@ h2, h3 {
         </table>
     <?php endif; ?>
 </div>
-
+<!-- ======================= messages Section ======================= -->
 <div id="messagesSection" class="section">
     <h2>All Messages</h2>
     <table border="1" cellpadding="8" cellspacing="0" style="width: 100%; border-collapse: collapse;">
@@ -1593,7 +1972,7 @@ h2, h3 {
         </tbody>
     </table>
 </div>
-
+<!-- ======================= send Message Section ======================= -->
     <div id="sendMessageSection" class="section">
         <h2>Send Message</h2>
         <?php if ($success): ?>
@@ -1615,7 +1994,7 @@ h2, h3 {
             <button type="submit" name="send_message">Send</button>
         </form>
     </div>
-
+<!-- ======================= contact Section ======================= -->
     <div id="contactSection" class="section">
     <h2>Contact Messages</h2>
     <?php foreach ($contacts as $c): ?>
@@ -1646,7 +2025,7 @@ h2, h3 {
         </div>
     <?php endforeach; ?>
 </div>
-
+<!-- ======================= admin Notifications ======================= -->
 <div id="adminNotifications" class="section">
     <h2>Admin Notifications (Ads)</h2>
 
@@ -1700,217 +2079,206 @@ h2, h3 {
     <?php endif; ?>
 </div>
 
+
 </div>
-<script>
-  // ========== Sidebar Button Active State ==========
-  document.querySelectorAll('.sidebar button').forEach(button => {
-    button.addEventListener('click', () => {
-      document.querySelectorAll('.sidebar button').forEach(btn => btn.classList.remove('active'));
-      button.classList.add('active');
-    });
+<script>// ========== Sidebar Button Active State ==========
+document.querySelectorAll('.sidebar button').forEach(button => {
+  button.addEventListener('click', () => {
+    document.querySelectorAll('.sidebar button').forEach(btn => btn.classList.remove('active'));
+    button.classList.add('active');
   });
+});
 
-  // ========== Section Toggle ==========
-  const defaultSection = 'dashboard';
+// ========== Section Toggle ==========
+const defaultSection = 'dashboard';
 
-  function showSection(id) {
-    document.querySelectorAll('.section').forEach(sec => sec.style.display = 'none');
-    const activeSection = document.getElementById(id);
-    if (activeSection) activeSection.style.display = 'block';
-    localStorage.setItem('admin_open_section', id);
-  }
+function showSection(id) {
+  document.querySelectorAll('.section').forEach(sec => sec.style.display = 'none');
+  const activeSection = document.getElementById(id);
+  if (activeSection) activeSection.style.display = 'block';
+  localStorage.setItem('admin_open_section', id);
+}
 
-  // ========== Sales Chart Initialization ==========
-  function initSalesChart() {
-    const chartElement = document.getElementById('salesChart');
-    if (!chartElement) return;
+// ========== Stock Update Confirmation ==========
+const stockForm = document.getElementById('inventoryForm');
+if (stockForm) {
+  stockForm.addEventListener('submit', function (e) {
+    if (!confirm('Are you sure you want to update stock quantities?')) {
+      e.preventDefault();
+    }
+  });
+}
 
-    const ctx = chartElement.getContext('2d');
-    const salesLabels = <?= json_encode(array_keys($salesChartData)) ?>;
-    const salesData = <?= json_encode(array_values($salesChartData)) ?>;
+// ========== Sales Chart Initialization ==========
+function initSalesChart() {
+  const chartElement = document.getElementById('salesChart');
+  if (!chartElement) return;
 
-    new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: salesLabels,
-        datasets: [{
-          label: 'Sales (₹)',
-          data: salesData,
-          borderColor: '#00573f',
-          backgroundColor: 'rgba(0, 87, 63, 0.2)',
-          fill: true,
-          tension: 0.3,
-          pointRadius: 5,
-          pointBackgroundColor: '#00573f',
-          pointHoverBorderColor: '#00432f'
-        }]
-      },
-      options: {
-        responsive: true,
-        scales: {
-          x: {
-            title: {
-              display: true,
-              text: 'Day of the Week',
-              color: '#666',
-              font: { size: 14 }
-            },
-            grid: { display: false }
-          },
-          y: {
-            beginAtZero: true,
-            ticks: {
-              callback: value => '₹' + value.toFixed(2)
-            },
-            grid: {
-              color: 'rgba(200,200,200,0.2)'
-            },
-            title: {
-              display: true,
-              text: 'Sales (₹)',
-              color: '#666',
-              font: { size: 14 }
-            }
-          }
+  const ctx = chartElement.getContext('2d');
+  const salesLabels = <?= json_encode(array_keys($salesChartData)) ?>;
+  const salesData = <?= json_encode(array_values($salesChartData)) ?>;
+
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: salesLabels,
+      datasets: [{
+        label: 'Sales (₹)',
+        data: salesData,
+        borderColor: '#00573f',
+        backgroundColor: 'rgba(0, 87, 63, 0.2)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 5,
+        pointBackgroundColor: '#00573f',
+        pointHoverBorderColor: '#00432f'
+      }]
+    },
+    options: {
+      responsive: true,
+      scales: {
+        x: {
+          title: { display: true, text: 'Day of the Week', color: '#666', font: { size: 14 } },
+          grid: { display: false }
         },
-        plugins: {
-          legend: {
-            display: true,
-            position: 'top',
-            labels: { color: '#333' }
-          },
-          tooltip: {
-            backgroundColor: '#333',
-            titleColor: '#fff',
-            bodyColor: '#fff'
-          }
+        y: {
+          beginAtZero: true,
+          ticks: { callback: value => '₹' + value.toFixed(2) },
+          grid: { color: 'rgba(200,200,200,0.2)' },
+          title: { display: true, text: 'Sales (₹)', color: '#666', font: { size: 14 } }
         }
+      },
+      plugins: {
+        legend: { display: true, position: 'top', labels: { color: '#333' } },
+        tooltip: { backgroundColor: '#333', titleColor: '#fff', bodyColor: '#fff' }
       }
-    });
-  }
+    }
+  });
+}
 
-  // ========== Order Status Change ==========
-  function attachStatusChangeHandlers() {
-    document.querySelectorAll('.status-select').forEach(select => {
-      select.addEventListener('change', function () {
-        const orderId = this.dataset.orderId;
-        const newStatus = this.value;
+// ========== Order Status Change ==========
+function attachStatusChangeHandlers() {
+  document.querySelectorAll('.status-select').forEach(select => {
+    select.addEventListener('change', function () {
+      const orderId = this.dataset.orderId;
+      const newStatus = this.value;
 
-        fetch('admin_dashboard.php', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: `order_id=${encodeURIComponent(orderId)}&status=${encodeURIComponent(newStatus)}`
-        })
-        .then(res => res.json())
-        .then(data => {
-          if (data.success) {
-            const badge = document.querySelector(`.status-badge-${orderId}`);
-            if (badge) {
-              badge.textContent = newStatus;
-              badge.className = `badge badge-${newStatus.toLowerCase()} status-badge-${orderId}`;
-            }
-          } else {
-            alert("Update failed: " + (data.message || "Unknown error"));
+      fetch('admin_dashboard.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `order_id=${encodeURIComponent(orderId)}&status=${encodeURIComponent(newStatus)}`
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          const badge = document.querySelector(`.status-badge-${orderId}`);
+          if (badge) {
+            badge.textContent = newStatus;
+            badge.className = `badge badge-${newStatus.toLowerCase()} status-badge-${orderId}`;
           }
-        })
-        .catch(err => alert("AJAX error: " + err));
-      });
+        } else {
+          alert("Update failed: " + (data.message || "Unknown error"));
+        }
+      })
+      .catch(err => alert("AJAX error: " + err));
     });
-  }
+  });
+}
 
-  // ========== Mark Messages as Read ==========
-  function attachMarkReadHandlers() {
-    document.querySelectorAll('.mark-read-btn').forEach(button => {
-      button.addEventListener('click', function () {
-        const messageId = this.dataset.messageId;
-        const row = this.closest('tr');
+// ========== Mark Messages as Read ==========
+function attachMarkReadHandlers() {
+  document.querySelectorAll('.mark-read-btn').forEach(button => {
+    button.addEventListener('click', function () {
+      const messageId = this.dataset.messageId;
+      const row = this.closest('tr');
 
-        fetch('admin_dashboard.php', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: `mark_read_id=${encodeURIComponent(messageId)}`
-        })
-        .then(res => res.json())
-        .then(data => {
-          if (data.success) {
-            row.classList.remove('unread');
-            this.parentElement.textContent = 'Read';
-          } else {
-            alert("Failed to mark as read.");
-          }
-        })
-        .catch(err => alert("AJAX error: " + err));
-      });
+      fetch('admin_dashboard.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `mark_read_id=${encodeURIComponent(messageId)}`
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          row.classList.remove('unread');
+          this.parentElement.textContent = 'Read';
+        } else {
+          alert("Failed to mark as read.");
+        }
+      })
+      .catch(err => alert("AJAX error: " + err));
     });
+  });
+}
+
+// ========== Notification Target User Toggle ==========
+function toggleUserSelection() {
+  const targetType = document.getElementById('target_type');
+  const userSelection = document.getElementById('userSelection');
+  if (targetType && userSelection) {
+    userSelection.style.display = (targetType.value === 'selected') ? 'block' : 'none';
   }
+}
 
-  // ========== Notification Target User Toggle ==========
-  function toggleUserSelection() {
-    const targetType = document.getElementById('target_type');
-    const userSelection = document.getElementById('userSelection');
-    if (targetType && userSelection) {
-      userSelection.style.display = (targetType.value === 'selected') ? 'block' : 'none';
-    }
+// ========== Category Toggles ==========
+function toggleNewCategory(value) {
+  const input = document.getElementById('new_category');
+  if (input) {
+    input.style.display = (value === '__new') ? 'block' : 'none';
+    if (value !== '__new') input.value = '';
   }
+}
 
-  // ========== Category Toggles ==========
-  function toggleNewCategory(value) {
-    const input = document.getElementById('new_category');
-    if (input) {
-      input.style.display = (value === '__new') ? 'block' : 'none';
-      if (value !== '__new') input.value = '';
-    }
+function toggleNewCategoryEdit(value, id) {
+  const input = document.getElementById('edit_new_category_' + id);
+  if (input) {
+    input.style.display = (value === '__new') ? 'block' : 'none';
+    if (value !== '__new') input.value = '';
   }
+}
 
-  function toggleNewCategoryEdit(value, id) {
-    const input = document.getElementById('edit_new_category_' + id);
-    if (input) {
-      input.style.display = (value === '__new') ? 'block' : 'none';
-      if (value !== '__new') input.value = '';
-    }
-  }
+// ========== Product Edit Toggle ==========
+function showEditForm(productId) {
+  const row = document.getElementById('edit-' + productId);
+  if (row) row.style.display = 'table-row';
+}
 
-  // ========== Product Edit Toggle ==========
-  function showEditForm(productId) {
-    const row = document.getElementById('edit-' + productId);
-    if (row) row.style.display = 'table-row';
-  }
+function hideEditForm(productId) {
+  const row = document.getElementById('edit-' + productId);
+  if (row) row.style.display = 'none';
+}
 
-  function hideEditForm(productId) {
-    const row = document.getElementById('edit-' + productId);
-    if (row) row.style.display = 'none';
-  }
+// ========== Product Search ==========
+document.getElementById('searchInput')?.addEventListener('keyup', function () {
+  const filters = this.value.trim().toLowerCase().split(/\s+/);
+  const rows = document.querySelectorAll('.product-table tbody tr');
+  let found = false;
 
-  // ========== Product Search ==========
-  document.getElementById('searchInput')?.addEventListener('keyup', function () {
-    const filters = this.value.trim().toLowerCase().split(/\s+/);
-    const rows = document.querySelectorAll('.product-table tbody tr');
-    let found = false;
+  rows.forEach(row => {
+    const rowText = (
+      row.cells[1].textContent + ' ' +
+      row.cells[2].textContent + ' ' +
+      row.cells[3].textContent + ' ' +
+      row.cells[6].textContent
+    ).toLowerCase();
 
-    rows.forEach(row => {
-      const rowText = (
-        row.cells[1].textContent + ' ' +
-        row.cells[2].textContent + ' ' +
-        row.cells[3].textContent + ' ' +
-        row.cells[6].textContent
-      ).toLowerCase();
-
-      const matchAll = filters.every(filter => rowText.includes(filter));
-      row.style.display = matchAll ? '' : 'none';
-      if (matchAll) found = true;
-    });
-
-    document.getElementById('searchHint').textContent = found ? '' : 'No matching products found.';
+    const matchAll = filters.every(filter => rowText.includes(filter));
+    row.style.display = matchAll ? '' : 'none';
+    if (matchAll) found = true;
   });
 
-  // ========== Initialization ==========
-  document.addEventListener('DOMContentLoaded', () => {
-    showSection(localStorage.getItem('admin_open_section') || defaultSection);
-    initSalesChart();
-    attachStatusChangeHandlers();
-    attachMarkReadHandlers();
-    toggleUserSelection();
-  });
+  document.getElementById('searchHint').textContent = found ? '' : 'No matching products found.';
+});
+
+// ========== Initialization ==========
+document.addEventListener('DOMContentLoaded', () => {
+  showSection(localStorage.getItem('admin_open_section') || defaultSection);
+  initSalesChart();
+  attachStatusChangeHandlers();
+  attachMarkReadHandlers();
+  toggleUserSelection();
+});
+
 </script>
 </body>
 </html>
