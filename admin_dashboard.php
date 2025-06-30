@@ -1211,15 +1211,14 @@ h2, h3 {
 }
 
 /* Sales Chart Styling */
-#salesChart {
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-  padding: 20px;
-  display: block;
-  max-width: 100%;
-}
-
+    #chartContainer {
+      background: #fff;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+      max-width: 85%;
+      margin: 0 auto;
+    }
   </style>
 </head>
 <body>
@@ -1277,8 +1276,10 @@ h2, h3 {
       </div>
     </div>
 
-    <h3>Sales Chart (Last 7 Days)</h3>
-    <canvas id="salesChart" width="800" height="300"></canvas>
+<div id="chartContainer">
+  <h3>Sales Chart (Last 7 Days)</h3>
+  <canvas id="salesChart" width="800" height="300"></canvas>
+</div>
 
   </div>
 </div>
@@ -1701,37 +1702,33 @@ h2, h3 {
 
 </div>
 <script>
-    //side bar actuve state
-    document.querySelectorAll('.sidebar button').forEach(button => {
-  button.addEventListener('click', () => {
-    document.querySelectorAll('.sidebar button').forEach(btn => btn.classList.remove('active'));
-    button.classList.add('active');
+  // ========== Sidebar Button Active State ==========
+  document.querySelectorAll('.sidebar button').forEach(button => {
+    button.addEventListener('click', () => {
+      document.querySelectorAll('.sidebar button').forEach(btn => btn.classList.remove('active'));
+      button.classList.add('active');
+    });
   });
-});
 
-  // Set the default section
+  // ========== Section Toggle ==========
   const defaultSection = 'dashboard';
 
-  // Show only the selected section
   function showSection(id) {
-    document.querySelectorAll('.section').forEach(sec => {
-      sec.style.display = 'none';
-    });
-
+    document.querySelectorAll('.section').forEach(sec => sec.style.display = 'none');
     const activeSection = document.getElementById(id);
     if (activeSection) activeSection.style.display = 'block';
-
     localStorage.setItem('admin_open_section', id);
   }
 
-  // Initialize the sales chart
+  // ========== Sales Chart Initialization ==========
   function initSalesChart() {
-    if (!document.getElementById('salesChart')) return; // Skip if no chart is present
+    const chartElement = document.getElementById('salesChart');
+    if (!chartElement) return;
 
+    const ctx = chartElement.getContext('2d');
     const salesLabels = <?= json_encode(array_keys($salesChartData)) ?>;
     const salesData = <?= json_encode(array_values($salesChartData)) ?>;
 
-    const ctx = document.getElementById('salesChart').getContext('2d');
     new Chart(ctx, {
       type: 'line',
       data: {
@@ -1744,30 +1741,59 @@ h2, h3 {
           fill: true,
           tension: 0.3,
           pointRadius: 5,
+          pointBackgroundColor: '#00573f',
+          pointHoverBorderColor: '#00432f'
         }]
       },
       options: {
+        responsive: true,
         scales: {
+          x: {
+            title: {
+              display: true,
+              text: 'Day of the Week',
+              color: '#666',
+              font: { size: 14 }
+            },
+            grid: { display: false }
+          },
           y: {
             beginAtZero: true,
             ticks: {
               callback: value => '₹' + value.toFixed(2)
+            },
+            grid: {
+              color: 'rgba(200,200,200,0.2)'
+            },
+            title: {
+              display: true,
+              text: 'Sales (₹)',
+              color: '#666',
+              font: { size: 14 }
             }
           }
         },
-        responsive: true,
         plugins: {
-          legend: { display: true, position: 'top' }
+          legend: {
+            display: true,
+            position: 'top',
+            labels: { color: '#333' }
+          },
+          tooltip: {
+            backgroundColor: '#333',
+            titleColor: '#fff',
+            bodyColor: '#fff'
+          }
         }
       }
     });
   }
 
-  // Attach event handlers for order status change
+  // ========== Order Status Change ==========
   function attachStatusChangeHandlers() {
     document.querySelectorAll('.status-select').forEach(select => {
       select.addEventListener('change', function () {
-        const orderId = this.getAttribute('data-order-id');
+        const orderId = this.dataset.orderId;
         const newStatus = this.value;
 
         fetch('admin_dashboard.php', {
@@ -1775,30 +1801,28 @@ h2, h3 {
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: `order_id=${encodeURIComponent(orderId)}&status=${encodeURIComponent(newStatus)}`
         })
-          .then(res => res.json())
-          .then(data => {
-            if (data.success) {
-              const badge = document.querySelector(`.status-badge-${orderId}`);
-              if (badge) {
-                badge.textContent = newStatus;
-                badge.className = `badge badge-${newStatus.toLowerCase()} status-badge-${orderId}`;
-              }
-            } else {
-              alert("Update failed: " + (data.message || "Unknown error"));
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            const badge = document.querySelector(`.status-badge-${orderId}`);
+            if (badge) {
+              badge.textContent = newStatus;
+              badge.className = `badge badge-${newStatus.toLowerCase()} status-badge-${orderId}`;
             }
-          })
-          .catch(err => {
-            alert("AJAX error: " + err);
-          });
+          } else {
+            alert("Update failed: " + (data.message || "Unknown error"));
+          }
+        })
+        .catch(err => alert("AJAX error: " + err));
       });
     });
   }
 
-  // Attach event handlers for marking messages as read
+  // ========== Mark Messages as Read ==========
   function attachMarkReadHandlers() {
     document.querySelectorAll('.mark-read-btn').forEach(button => {
       button.addEventListener('click', function () {
-        const messageId = this.getAttribute('data-message-id');
+        const messageId = this.dataset.messageId;
         const row = this.closest('tr');
 
         fetch('admin_dashboard.php', {
@@ -1806,100 +1830,87 @@ h2, h3 {
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: `mark_read_id=${encodeURIComponent(messageId)}`
         })
-          .then(res => res.json())
-          .then(data => {
-            if (data.success) {
-              row.classList.remove('unread');
-              this.parentElement.textContent = 'Read';
-            } else {
-              alert("Failed to mark as read.");
-            }
-          })
-          .catch(err => {
-            alert("AJAX error: " + err);
-          });
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            row.classList.remove('unread');
+            this.parentElement.textContent = 'Read';
+          } else {
+            alert("Failed to mark as read.");
+          }
+        })
+        .catch(err => alert("AJAX error: " + err));
       });
     });
   }
 
-  // Toggle user selection based on notification target
+  // ========== Notification Target User Toggle ==========
   function toggleUserSelection() {
-    const targetTypeElement = document.getElementById('target_type');
+    const targetType = document.getElementById('target_type');
     const userSelection = document.getElementById('userSelection');
-
-    if (targetTypeElement && userSelection) {
-      userSelection.style.display = (targetTypeElement.value === 'selected') ? 'block' : 'none';
+    if (targetType && userSelection) {
+      userSelection.style.display = (targetType.value === 'selected') ? 'block' : 'none';
     }
   }
 
-  // Toggle new category input in Add Product form
+  // ========== Category Toggles ==========
   function toggleNewCategory(value) {
-    const newCatInput = document.getElementById('new_category');
-    if (newCatInput) {
-      newCatInput.style.display = (value === '__new') ? 'block' : 'none';
-      if (value !== '__new') newCatInput.value = '';
+    const input = document.getElementById('new_category');
+    if (input) {
+      input.style.display = (value === '__new') ? 'block' : 'none';
+      if (value !== '__new') input.value = '';
     }
   }
 
-  // Toggle new category input in Edit Product form
   function toggleNewCategoryEdit(value, id) {
-    const newCatInput = document.getElementById('edit_new_category_' + id);
-    if (newCatInput) {
-      newCatInput.style.display = (value === '__new') ? 'block' : 'none';
-      if (value !== '__new') newCatInput.value = '';
+    const input = document.getElementById('edit_new_category_' + id);
+    if (input) {
+      input.style.display = (value === '__new') ? 'block' : 'none';
+      if (value !== '__new') input.value = '';
     }
   }
 
-  // Show edit form for a product
+  // ========== Product Edit Toggle ==========
   function showEditForm(productId) {
     const row = document.getElementById('edit-' + productId);
     if (row) row.style.display = 'table-row';
   }
 
-  // Hide edit form for a product
   function hideEditForm(productId) {
     const row = document.getElementById('edit-' + productId);
     if (row) row.style.display = 'none';
   }
 
-  // Initialize on page load
-  document.addEventListener('DOMContentLoaded', () => {
-    const savedSection = localStorage.getItem('admin_open_section') || defaultSection;
-    showSection(savedSection);
+  // ========== Product Search ==========
+  document.getElementById('searchInput')?.addEventListener('keyup', function () {
+    const filters = this.value.trim().toLowerCase().split(/\s+/);
+    const rows = document.querySelectorAll('.product-table tbody tr');
+    let found = false;
 
+    rows.forEach(row => {
+      const rowText = (
+        row.cells[1].textContent + ' ' +
+        row.cells[2].textContent + ' ' +
+        row.cells[3].textContent + ' ' +
+        row.cells[6].textContent
+      ).toLowerCase();
+
+      const matchAll = filters.every(filter => rowText.includes(filter));
+      row.style.display = matchAll ? '' : 'none';
+      if (matchAll) found = true;
+    });
+
+    document.getElementById('searchHint').textContent = found ? '' : 'No matching products found.';
+  });
+
+  // ========== Initialization ==========
+  document.addEventListener('DOMContentLoaded', () => {
+    showSection(localStorage.getItem('admin_open_section') || defaultSection);
     initSalesChart();
     attachStatusChangeHandlers();
     attachMarkReadHandlers();
     toggleUserSelection();
   });
-  
-document.getElementById('searchInput').addEventListener('keyup', function () {
-    const filters = this.value.trim().toLowerCase().split(/\s+/); // Split input into words
-    const rows = document.querySelectorAll('.product-table tbody tr');
-    let found = false;
-
-    rows.forEach(row => {
-        const rowText = (
-            row.cells[1].textContent + ' ' +
-            row.cells[2].textContent + ' ' +
-            row.cells[3].textContent + ' ' +
-            row.cells[6].textContent
-        ).toLowerCase();
-
-        const matchAll = filters.every(filter => rowText.includes(filter));
-
-        if (matchAll) {
-            row.style.display = '';
-            found = true;
-        } else {
-            row.style.display = 'none';
-        }
-    });
-
-    document.getElementById('searchHint').textContent = found ? '' : 'No matching products found.';
-});
-
 </script>
-
 </body>
 </html>
