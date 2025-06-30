@@ -3,7 +3,7 @@
 $servername = "localhost";
 $username = "root";
 $password = "";
-$dbname = "animzmax_db";  // <-- Replace this with your database name
+$dbname = "animzmax_db";
 
 // Create connection
 $conn = new mysqli($servername, $username, $password, $dbname);
@@ -13,7 +13,9 @@ if ($conn->connect_error) {
     die("Connection failed: " . $conn->connect_error);
 }
 ?>
+
 <?php
+session_name('admin_session'); // Use the same unique session name
 session_start();
 
 // Unset all session variables
@@ -22,7 +24,7 @@ $_SESSION = [];
 // Destroy the session
 session_destroy();
 
-// Optional: Destroy the session cookie (for extra security)
+// Optional: Destroy the session cookie (extra security)
 if (ini_get("session.use_cookies")) {
     $params = session_get_cookie_params();
     setcookie(
@@ -36,7 +38,7 @@ if (ini_get("session.use_cookies")) {
     );
 }
 
-// Redirect to login page
+// Redirect to admin login
 header("Location: admin_login.php");
 exit();
 ?>
